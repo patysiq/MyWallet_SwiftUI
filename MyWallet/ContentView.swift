@@ -5,76 +5,93 @@
 //  Created by PATRICIA S SIQUEIRA on 27/06/21.
 //
 
+
 import SwiftUI
-import CoreData
 
-struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
-
-    var body: some View {
-        List {
-            ForEach(items) { item in
-                Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-            }
-            .onDelete(perform: deleteItems)
-        }
-        .toolbar {
-            #if os(iOS)
-            EditButton()
-            #endif
-
-            Button(action: addItem) {
-                Label("Add Item", systemImage: "plus")
-            }
-        }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
-    }
+struct ExpenseItem: Identifiable, Codable {
+    var id = UUID()
+    let paid: Bool
+    let type: String
+    let describe: String
+    let amount: Int
+    let date: Date
 }
 
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
+class Expenses: ObservableObject {
+    @Published var items = [ExpenseItem]() {
+        didSet {
+            let encoder = JSONEncoder()
+            if let encoded = try? encoder.encode(items) {
+                UserDefaults.standard.set(encoded, forKey: "Items")
+            }
+        }
+    }
+    init() {
+        if let items = UserDefaults.standard.data(forKey: "Items") {
+            let decoder = JSONDecoder()
+            if let decoded = try? decoder.decode([ExpenseItem].self, from: items) {
+                self.items = decoded
+                return
+            }
+        }
+        
+        self.items = []
+    }
+    
+}
+
+struct ContentView: View {
+    @ObservedObject var expenses = Expenses()
+    @State private var showingAddExpense = false
+    
+    var body: some View {
+        NavigationView {
+                List {
+                    ForEach(expenses.items) { item in
+                        HStack {
+                            VStack(alignment: .leading) {
+//                                Text(paid ? "Pago" : "Não pago")
+//                                    .font(.headline)
+                                Text(item.describe)
+                            }
+                            Spacer()
+                            if item.amount <= 10 {
+                                Text("$\(item.amount)")
+                                    .foregroundColor(.green)
+                            } else if item.amount <= 100 && item.amount > 10 {
+                                Text("$\(item.amount)")
+                                    .foregroundColor(.orange)
+                            } else {
+                                Text("$\(item.amount)")
+                                    .foregroundColor(.red)
+                                    .bold()
+                            }
+                        }
+                    }
+                    .onDelete(perform: removeItems)
+                }
+            .navigationBarTitle("My walet")
+            .navigationBarItems(leading: EditButton(), trailing:
+                                    Button(action: {
+                                        self.showingAddExpense = true
+                                    }) {
+                                        Image(systemName: "plus")
+                                    }
+            )
+            .sheet(isPresented: $showingAddExpense) {
+                AddView(expenses: self.expenses)
+            }
+        }
+    }
+    
+    func removeItems(at offsets: IndexSet) {
+        expenses.items.remove(atOffsets: offsets)
+    }
+    
+}
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        ContentView()
     }
 }
